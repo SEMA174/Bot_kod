@@ -1,0 +1,224 @@
+import random
+import telebot
+import re
+from telebot import types
+import sqlite3
+
+#подключение к базе данных(если не существует то будет создана)
+conn = sqlite3.connect('bot_database.db', check_same_thread=False)
+cursor = conn.cursor()
+
+# Создаем таблицу пользователей, если ее еще нет
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS users (
+        user_id INTEGER PRIMARY KEY,
+        balance INTEGER DEFAULT 1000
+    )
+''')
+conn.commit()
+
+grimoires_id = ['tabl.jpeg','grim1.jpeg']
+grimoires_name = ['Огненный шар','зборник']
+opsanie_grimoires = ['крутой','ggfgfg']
+salve_grimoires = ['250']
+
+
+# # Создаем таблицу гримуаров, если ее еще нет
+# cursor.execute('''
+#     CREATE TABLE IF NOT EXISTS grimoires (
+#         grimoire_id INTEGER PRIMARY KEY,
+#         name TEXT,
+#         cost INTEGER
+#     )
+# ''')
+
+# # Заполняем таблицу гримуаров (если она пустая)
+# cursor.execute("SELECT COUNT(*) FROM grimoires")
+# if cursor.fetchone()[0] == 0:
+#     cursor.execute("INSERT INTO grimoires (grimoire_id, name, cost) VALUES (1, 'Огненный шар', 250)")
+#     cursor.execute("INSERT INTO grimoires (grimoire_id, name, cost) VALUES (2, 'Ледяная стрела', 300)")
+#     cursor.execute("INSERT INTO grimoires (grimoire_id, name, cost) VALUES (3, 'Щит магии', 400)")
+
+
+# Функция для получения баланса пользователя из базы данных
+def get_balance(user_id):
+    cursor.execute('SELECT balance FROM users WHERE user_id = ?', (user_id,))
+    result = cursor.fetchone()
+    if result:
+        return result[0]
+    else:
+        # Если пользователя нет в базе данных, добавляем его
+        cursor.execute('INSERT INTO users (user_id) VALUES (?)', (user_id,))
+        conn.commit()
+        return 0  # Начальный баланс
+
+# Функция для обновления баланса пользователя в базе данных
+def update_balance(user_id, new_balance):
+    cursor.execute('UPDATE users SET balance = ? WHERE user_id = ?', (new_balance, user_id))
+    conn.commit()
+
+
+
+#свока обозначений: <u></u>--подчёркивает текст,    <b></b>--делает текст жирным 
+bot = telebot.TeleBot('')  #свой токен!
+
+#инфа чата
+# @bot.message_handler()
+# def get_user_text(message):
+#     bot.send_message(message.chat.id,message)
+
+s=['чтож давай посмотрим что у меня есть','ща глянем','чтож сейчас покажу','хах! имеется']
+imadje = [':)',':]','0W0','QWQ','OwO']
+#КОМАНДА:0
+#ПОИСК КОМАНДЫ В СТРОКЕ: МАГАЗ
+def poisk_command_magaz_menu(message):
+    if message.text:
+        pattern = r"^\s*магаз\b" #комманла на которую реагирует бот
+        return bool(re.search(pattern,message.text,re.IGNORECASE))
+    return False
+
+# Функция для создания клавиатуры для гримуара
+def create_grimoire_keyboard(grimoires_name,gg):
+    markup = types.InlineKeyboardMarkup()
+    button_text = f"ГРИМУАР {grimoires_name}"
+    callback_data = grimoires_id[gg] # Лучше используйте id
+    markup.add(types.InlineKeyboardButton(button_text, callback_data=callback_data))
+    print(callback_data)
+    return markup
+
+#отправка сообщений  [снижение нагромождения [ОПТИМИЗАЦИЯ]]
+################
+def no_samaotvet(call):
+    # Проверяем, является ли чат форумом (группой с темами)
+        if call.message.chat.is_forum:
+            # Если это форум, отправляем сообщение в тему
+            topic_id = call.message.message_thread_id
+            if topic_id:
+                # Отправляем в определенный топик
+                bot.send_message(call.message.chat.id, f'{random.choice(s)} {random.choice(imadje)}', reply_to_message_id=call.message.message_id)
+                k=0
+                for grimoire_id in grimoires_id:
+                        photo = open(grimoire_id, 'rb') # Открываем каждый раз новый файл!
+                        markup = create_grimoire_keyboard(grimoires_name[k],gg=k)   # Создаем клавиатуру для текущего гримуара
+                        bot.send_photo(call.message.chat.id, photo, opsanie_grimoires[k], reply_markup=markup, reply_to_message_id=call.message.message_id)  # Отправляем сообщение
+                        k+=1
+                        photo.close() # Не забывайте закрывать файлы
+            else:
+                #Отправляем в General
+                bot.send_message(call.message.chat.id, f'{random.choice(s)} {random.choice(imadje)}')
+
+        else:
+            # Если это обычный чат (личка или группа), отправляем сообщение без reply_to_message_id
+            # Твоя функция, где нужно показать гримуары
+                k=0
+                for grimoire_id in grimoires_id:
+                        photo = open(grimoire_id, 'rb') # Открываем каждый раз новый файл!
+                        markup = create_grimoire_keyboard(grimoires_name[k],gg=k)   # Создаем клавиатуру для текущего гримуара
+                        bot.send_photo(call.message.chat.id, photo, opsanie_grimoires[k], reply_markup=markup)  # Отправляем сообщение
+                        k+=1
+                        photo.close() # Не забывайте закрывать файлы
+
+###############
+
+#ОБРАБОТЧИК КНОПОК
+@bot.callback_query_handler(func= lambda call: True)
+def call_back_line(call):
+    if call.data == 'гримуары':
+        bot.send_message(call.message.chat.id, '<b>гримуары? хмм</b>', parse_mode='html',reply_to_message_id=call.message.message_id)
+        no_samaotvet(call)
+
+    elif call.data == grimoires_id[0]:
+        user_id = call.from_user.id
+        balance = get_balance(user_id)
+        cost = 500  # Стоимость гримуара
+        if balance >= cost:
+            new_balance = balance - cost
+            update_balance(user_id, new_balance)
+            bot.send_message(call.message.chat.id, f"Вы успешно купили гримуар! Ваш новый баланс: {new_balance}",reply_to_message_id=call.message.message_id)
+        else:
+            bot.send_message(call.message.chat.id, "Недостаточно средств для покупки гримуара!",reply_to_message_id=call.message.message_id)
+            # Удаляем клавиатуру после нажатия кнопки
+
+    elif call.data == grimoires_id[1]:
+        user_id = call.from_user.id
+        balance = get_balance(user_id)
+        cost = 400  # Стоимость гримуара
+        if balance >= cost:
+            new_balance = balance - cost
+            update_balance(user_id, new_balance)
+            bot.send_message(call.message.chat.id, f"Вы успешно купили гримуар! Ваш новый баланс: {new_balance}",reply_to_message_id=call.message.message_id)
+        else:
+            bot.send_message(call.message.chat.id, "Недостаточно средств для покупки гримуара!",reply_to_message_id=call.message.message_id)
+            # Удаляем клавиатуру после нажатия кнопки
+
+    elif call.data == 'попол':
+        user_id = call.from_user.id
+        balance = get_balance(user_id)
+        new_balance = balance + 1000
+        update_balance(user_id, new_balance)
+        bot.send_message(call.message.chat.id, f"Вы успешно пополнили счёт, Ваш новый баланс: {new_balance}",reply_to_message_id=call.message.message_id)
+        # Удаляем клавиатуру после нажатия кнопки
+    bot.edit_message_reply_markup(chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
+
+
+
+# ОБРАБОТЧИК КОМАНДЫ: МАГАЗ [ТОЛЬКО для личных сообщений]
+@bot.message_handler(func=lambda message: poisk_command_magaz_menu(message) and message.chat.type == 'private')
+def start_private(message):
+    murkup = types.InlineKeyboardMarkup() #обьявление кнопки
+    murkup.add(types.InlineKeyboardButton("гримуарчики", callback_data='гримуары')) #сама кнопка, callbacka_data это вещь!
+    bot.send_message(message.chat.id,'что интересует?',reply_markup=murkup) # прикрепление кнопки, [действие совершает обработчик кнопок]
+    # mess = message.from_user.first_name
+
+
+
+# ОБРАБОТЧИК КОМАНДЫ: МАГАЗ [ТОЛЬКО для групп и супергрупп]
+@bot.message_handler(func= lambda message: poisk_command_magaz_menu(message) and message.chat.type in ['group', 'supergroup'])
+def start_group(message):
+
+    # Проверяем, является ли чат форумом (группой с темами)
+    if message.chat.is_forum:
+        # Получаем ID темы (топика)
+        topic_id = message.message_thread_id
+        if topic_id:
+            # Используем reply_to_message_id для отправки сообщения в тему (топик)
+            murkup = types.InlineKeyboardMarkup() #обьявляем кнопку
+            murkup.add(types.InlineKeyboardButton("гримуарчики", callback_data='гримуары')) #создаём кнопку
+            bot.send_message(message.chat.id,'что интересуетgggg',reply_markup=murkup ,reply_to_message_id=message.id)
+        else:
+            bot.send_message(message.chat.id, '<b>hello</b>', parse_mode='html')  # Отправляем в General
+    else:
+        bot.send_message(message.chat.id, '<b>hello</b> (группа)', parse_mode='html')  # Отправляем в обычную группу
+
+#КОМАНДА:1
+#ПОИСК КОМАНДЫ В СТРОКЕ: баланс
+def poisk_command_magaz_balans(message):
+    if message.text:
+        pattern = r"^\s*баланс\b" #комманла на которую реагирует бот
+        return bool(re.search(pattern,message.text,re.IGNORECASE))
+    return False
+
+# будет активна по команде баланс
+@bot.message_handler(func=lambda message: poisk_command_magaz_balans(message) and message.chat.type == 'private')
+def handle_start_balance(message):
+    user_id = message.from_user.id #получаем юзер айди
+    balance = get_balance(user_id) #получаем баланс по айди юзера
+    bot.send_message(message.chat.id, f"Ваш баланс: {balance}",reply_to_message_id=message.id)
+
+#КОМАНДА:2
+def poisk_command_plus(message):
+    if message.text:
+        pattern = r"^\s*пополнить\b" #комманла на которую реагирует бот
+        return bool(re.search(pattern,message.text,re.IGNORECASE))
+    return False
+
+@bot.message_handler(func=lambda message: poisk_command_plus(message) and message.chat.type == 'private')
+def plus_denga(message):
+    murkup = types.InlineKeyboardMarkup() #обьявление кнопки
+    murkup.add(types.InlineKeyboardButton("пополнить на 1К", callback_data='попол')) #сама кнопка, callbacka_data это вещь!
+    bot.send_message(message.chat.id,'выбери',reply_markup=murkup) # прикрепление кнопки, [действие совершает обработчик кнопок]
+
+
+#бесконечный запуск
+bot.polling(none_stop=True)
+conn.close() # Закрываем соединение с базой данных
